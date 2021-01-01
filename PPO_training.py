@@ -8,6 +8,7 @@ from PPO_net import PPO_net
 from PPO_utils import Replay_buffer
 from PPO_utils import Plot_result
 
+
 class PPO_train():
     def __init__(self, basic_config):
         self.PPO_epoch = basic_config["PPO_EP"]
@@ -23,7 +24,7 @@ class PPO_train():
         self.optimizer = optim.Adam(self.ppo_net.parameters(), lr=basic_config["LR_RATE"])
         self.env = Environ(basic_config)
         self.render = basic_config["ENV_RENDER"]
-        self.plot_result = Plot_result(basic_config["GAME"],"Agent_score", "episode", "score")
+        self.plot_result = Plot_result(basic_config["GAME"], "Agent_score", "episode", "score")
         self.plot_loss = Plot_result(basic_config["GAME"], "PPO_loss", "episode", "loss")
         self.total_loss = 0
 
@@ -48,15 +49,20 @@ class PPO_train():
                 new_logp = self.ppo_net.get_new_lp(s[ind], a[ind])
                 ratio = torch.exp(new_logp - old_logp[ind])
                 s1_loss = advantages[ind] * ratio  ## * is elementwise product for tensor
+                ## policy network clipping
                 s2_loss = advantages[ind] * torch.clamp(ratio, 1.0 - self.epsilon, 1.0 + self.epsilon)
                 policy_loss = -torch.mean(torch.min(s1_loss,
                                                     s2_loss))  ## why get mean in the end, because the comparation is related to each state action pair
-                v1_loss = (self.ppo_net.get_value(s) - current_q).pow(2)
-                v2_loss = (torch.clamp(self.ppo_net.get_value(s), 1 - self.epsilon, 1 + self.epsilon) - current_q).pow(2)
+                v1_loss = (self.ppo_net.get_value(s[ind]) - current_q[ind]).pow(2)
+                v_ratio = self.ppo_net.get_value(s[ind]) / current_value[ind]
+                ## trick value function clipping
+                v2_loss = (torch.clamp(v_ratio, 1 - self.epsilon, 1 + self.epsilon) * current_value[ind] - current_q[ind]).pow(2)
                 value_loss = torch.mean(torch.min(v1_loss, v2_loss))
                 total_loss = policy_loss + value_loss
                 self.optimizer.zero_grad()
                 total_loss.backward()
+                ### trick norm clipping
+                torch.nn.utils.clip_grad_norm_(self.ppo_net.parameters(), 0.5)
                 self.optimizer.step()
                 self.total_loss = total_loss.item()
 
@@ -70,9 +76,8 @@ class PPO_train():
             while True:
                 print(f'Begin in {step} step')
                 game_time += 1
-                action, action_logp = self.ppo_net.get_action(state)   ## action in range 0 to 1
-                print(action_logp)
-                state_, reward, done, die = self.env.step(action* np.array([2., 1., 1.]) + np.array([-1., 0., 0.]))
+                action, action_logp = self.ppo_net.get_action(state)  ## action in range 0 to 1
+                state_, reward, done, die = self.env.step(action * np.array([2., 1., 1.]) + np.array([-1., 0., 0.]))
                 self.replay_buffer.add_sample(state, action, reward, state_, action_logp)
                 if self.render:
                     self.env.render()
@@ -86,16 +91,13 @@ class PPO_train():
                 if done or die or game_time >= 10000:
                     break
 
-            m_average_score = 0.95 * m_average_score + 0.05 * score
+            m_average_score = 0.99 * m_average_score + 0.01 * score
             self.plot_loss(step, self.total_loss)
             if step % 10 == 0:
                 self.ppo_net.save_model()
                 score_all.append(score)
                 self.plot_result(step, m_average_score)
 
-
-
             if m_average_score > self.env.reward_threshold:
                 print("Our agent is performing over threshold, ending training")
                 break
-

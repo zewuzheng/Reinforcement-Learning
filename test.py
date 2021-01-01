@@ -2,28 +2,36 @@ import torch
 from torch import nn
 from PPO_net import PPO_net
 from torch.distributions import Beta
+from Env_wrapper import Environ_test
+
 
 cuda = torch.cuda.is_available()
-
 device = torch.device('cuda' if cuda else 'cpu')
+
 # device = 'cpu'
 # print(torch.cuda.is_available())
 basic_config = {
-    "GAMMA": 0.9,
-    "ACTOR_LR": 0.0001,
-    "CRITIC_LR": 0.0001,
-    "MIN_BATCH_SIZE": 64,
-    "UPDATE_STEP": 15,
-    "EPSILON": 0.2,
-    "GAME": "CartPole-v0",
-    "AC_STYLE": False,
-    "INPUT_SIZE": 4,
-    "INIT_WEIGHT": False,
-    "STATE_SIZE": (4, 96, 96),
     "ACTION_SIZE": (3,),
-    "PPO_EP": 10,
+    "ACTOR_LR": 0.0001,
+    "AC_STYLE": False,
+    "BATCH_SIZE": 128,
+    "BUFFER_SIZE": 2000,
+    "CRITIC_LR": 0.0001,
+    "DEVICE": device,
+    "EPSILON": 0.1,
+    "ENV_RENDER": False,
+    "GAMMA": 0.9,
+    "GAME": "CarRacing-v0",
+    "GAME_SEED": 0,
+    "INPUT_SIZE": 4,
+    "INIT_WEIGHT": True,
+    "LR_RATE": 1e-3,
+    "MIN_BATCH_SIZE": 64,
     "MAX_TRAIN_STEP": 100000,
-    "DEVICE": device
+    "PPO_EP": 10,
+    "STATE_SIZE": (4, 96, 96),
+    "UPDATE_STEP": 15,
+    "LOAD_MODEL": False
 }
 
 from PPO_utils import Replay_buffer
@@ -78,5 +86,32 @@ from PPO_utils import Replay_buffer
 # print(act_logprob)
 
 #%%
+# import numpy as np
+# import gym
+# ppo = PPO_net(basic_config).double().to(device)
+# env = Environ_test(basic_config)
+# ppo.load_model('models/ppo_latest.pt')
+# while True:
+#     state = env.reset()
+#     while True:
+#         action, _ = ppo.get_action(state)
+#         state_, reward, done, die = env.step(action* np.array([2., 1., 1.]) + np.array([-1., 0., 0.]))
+#         env.render()
+#         state = state_
+#         if die:
+#             break
+
+#%%
 import gym
-env = gym.make("CartPole-v1")
+import matplotlib.pyplot as plt
+import numpy as np
+env = gym.make('CarRacing-v0')
+state = env.reset()
+for _ in range(30):
+    action = [0.5,0.5,0]
+    state_,_,_,_ = env.step(action)
+
+gray = np.dot(state_[..., :], [0.299, 0.587, 0.114])
+
+plt.imshow(state_)
+plt.show()

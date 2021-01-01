@@ -16,8 +16,11 @@ class PPO_net(nn.Module):
         else:
             self.policy_mix = PPO_mix(basic_config)
 
-    def load_model(self):
-        self.load_state_dict(torch.load('models/ppo_latest.pt'))
+    def load_model(self, path = None):
+        if path is not None:
+            self.load_state_dict(torch.load(path))
+        else:
+            self.load_state_dict(torch.load('models/ppo_latest.pt'))
 
     def save_model(self):
         torch.save(self.state_dict(), 'models/ppo_latest.pt')

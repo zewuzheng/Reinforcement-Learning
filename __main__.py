@@ -3,6 +3,10 @@
 
 import torch
 from PPO_training import PPO_train
+from pyvirtualdisplay import Display
+
+virtual_display = Display(visible=0, size=(1, 1))
+virtual_display.start()
 
 cuda = torch.cuda.is_available()
 device = torch.device('cuda' if cuda else 'cpu')
@@ -17,7 +21,7 @@ basic_config = {
     "DEVICE": device,
     "EPSILON": 0.1,
     "ENV_RENDER": False,
-    "GAMMA": 0.9,
+    "GAMMA": 0.99,
     "GAME": "CarRacing-v0",
     "GAME_SEED": 0,
     "INPUT_SIZE": 4,
