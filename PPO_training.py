@@ -14,9 +14,11 @@ class PPO_train():
         self.PPO_epoch = basic_config["PPO_EP"]
         self.max_train_step = basic_config["MAX_TRAIN_STEP"]
         self.device = basic_config["DEVICE"]
+        self.vis = basic_config["USE_VIS"]
         self.gamma = basic_config["GAMMA"]
         self.epsilon = basic_config["EPSILON"]
         self.batch_size = basic_config["BATCH_SIZE"]
+        self.ac = basic_config['AC_STYLE']
         self.ppo_net = PPO_net(basic_config).double().to(self.device)
         if basic_config["LOAD_MODEL"]:
             self.ppo_net.load_model()
@@ -45,7 +47,10 @@ class PPO_train():
         ## update PPO
         for _ in range(self.PPO_epoch):
             for ind in BatchSampler(SubsetRandomSampler(range(self.replay_buffer.buffer_size)), self.batch_size, False):
-                print("updating!!!!!!!!!!!!!!!!")
+                if self.ac:
+                    print("updating actor critic agent!!!!!!!!!!!!!!!!")
+                else:
+                    print("updating normal agent!!!!!!!!!!!!!!")
                 new_logp = self.ppo_net.get_new_lp(s[ind], a[ind])
                 ratio = torch.exp(new_logp - old_logp[ind])
                 s1_loss = advantages[ind] * ratio  ## * is elementwise product for tensor
@@ -92,11 +97,12 @@ class PPO_train():
                     break
 
             m_average_score = 0.99 * m_average_score + 0.01 * score
-            self.plot_loss(step, self.total_loss)
             if step % 10 == 0:
                 self.ppo_net.save_model()
                 score_all.append(score)
-                self.plot_result(step, m_average_score)
+                if self.vis:
+                    self.plot_result(step, m_average_score)
+                    self.plot_loss(step, self.total_loss)
 
             if m_average_score > self.env.reward_threshold:
                 print("Our agent is performing over threshold, ending training")

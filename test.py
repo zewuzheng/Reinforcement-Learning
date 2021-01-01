@@ -86,32 +86,32 @@ from PPO_utils import Replay_buffer
 # print(act_logprob)
 
 #%%
-# import numpy as np
-# import gym
-# ppo = PPO_net(basic_config).double().to(device)
-# env = Environ_test(basic_config)
-# ppo.load_model('models/ppo_latest.pt')
-# while True:
-#     state = env.reset()
-#     while True:
-#         action, _ = ppo.get_action(state)
-#         state_, reward, done, die = env.step(action* np.array([2., 1., 1.]) + np.array([-1., 0., 0.]))
-#         env.render()
-#         state = state_
-#         if die:
-#             break
+import numpy as np
+import gym
+ppo = PPO_net(basic_config).double().to(device)
+env = Environ_test(basic_config)
+ppo.load_model('models/ppo_latest.pt')
+while True:
+    state = env.reset()
+    while True:
+        action, _ = ppo.get_action(state)
+        state_, reward, done, die = env.step(action* np.array([2., 1., 1.]) + np.array([-1., 0., 0.]))
+        env.render()
+        state = state_
+        if die:
+            break
 
 #%%
-import gym
-import matplotlib.pyplot as plt
-import numpy as np
-env = gym.make('CarRacing-v0')
-state = env.reset()
-for _ in range(30):
-    action = [0.5,0.5,0]
-    state_,_,_,_ = env.step(action)
-
-gray = np.dot(state_[..., :], [0.299, 0.587, 0.114])
-
-plt.imshow(state_)
-plt.show()
+# import gym
+# import matplotlib.pyplot as plt
+# import numpy as np
+# env = gym.make('CarRacing-v0')
+# state = env.reset()
+# for _ in range(30):
+#     action = [0.5,0.5,0]
+#     state_,_,_,_ = env.step(action)
+#
+# gray = np.dot(state_[..., :], [0.299, 0.587, 0.114])
+#
+# plt.imshow(state_)
+# plt.show()

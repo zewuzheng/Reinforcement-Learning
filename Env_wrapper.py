@@ -5,6 +5,7 @@ class Environ():
     def __init__(self, basic_config):
         self.env = gym.make(basic_config["GAME"])
         self.env.seed(basic_config["GAME_SEED"])
+        self.img_stack = basic_config["IMG_STACK"]
         self.reward_threshold = self.env.spec.reward_threshold
 
     def reset(self):
@@ -14,7 +15,7 @@ class Environ():
         self.die = False
         img_rgb = self.env.reset()
         img_gray = self.rgb2gray(img_rgb)
-        self.stack = [img_gray] * 4  # four frames for decision
+        self.stack = [img_gray] * self.img_stack  # four frames for decision
         return np.array(self.stack)
 
     def step(self, action):
@@ -25,7 +26,7 @@ class Environ():
             # if die:
             #     reward += 100
             # green penalty
-            if np.mean(img_rgb[63:83, 38:58, 1]) > 170.0: # 185.0:
+            if np.mean(img_rgb[63:83, 38:58, 1]) > 180.0: # 185.0:
                 reward -= 0.05
             total_reward += reward
             # if no reward recently, end the episode

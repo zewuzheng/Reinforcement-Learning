@@ -10,8 +10,9 @@ class PPO_net(nn.Module):
         super(PPO_net, self).__init__()
         self.ac_style = basic_config['AC_STYLE']
         self.device = basic_config["DEVICE"]
+        self.store_path = basic_config["STORE"]
         if self.ac_style:
-            self.policy = PPO_actor(basic_config)
+            self.policy_mix = PPO_actor(basic_config)
             self.value = PPO_critic(basic_config)
         else:
             self.policy_mix = PPO_mix(basic_config)
@@ -20,10 +21,10 @@ class PPO_net(nn.Module):
         if path is not None:
             self.load_state_dict(torch.load(path))
         else:
-            self.load_state_dict(torch.load('models/ppo_latest.pt'))
+            self.load_state_dict(torch.load(self.store_path))
 
     def save_model(self):
-        torch.save(self.state_dict(), 'models/ppo_latest.pt')
+        torch.save(self.state_dict(), self.store_path)
 
     @torch.no_grad()
     def get_action(self, state):
@@ -40,7 +41,10 @@ class PPO_net(nn.Module):
         return act, act_logprob
 
     def get_value(self, state):
-        (_, _), value = self.policy_mix.forward(state)
+        if not self.ac_style:
+            (_, _), value = self.policy_mix.forward(state)
+        else:
+            value = self.value.forward(state)
         return value
 
     def get_new_lp(self, state, action):
@@ -55,7 +59,7 @@ class PPO_mix(nn.Module):
     def __init__(self, basic_config):
         super(PPO_mix, self).__init__()
         ## step 1: read config from basic config
-        self.input_stack = basic_config["INPUT_SIZE"]
+        self.input_stack = basic_config["IMG_STACK"]
         self.init_weight = basic_config["INIT_WEIGHT"]
 
         ## step 2: define network architecture
@@ -115,14 +119,98 @@ class PPO_mix(nn.Module):
 class PPO_actor(nn.Module):
     def __init__(self, basic_config):
         super(PPO_actor, self).__init__()
+        ## step 1: read config from basic config
+        self.input_stack = basic_config["IMG_STACK"]
+        self.init_weight = basic_config["INIT_WEIGHT"]
 
-    def forward(self):
-        pass
+        ## step 2: define network architecture
+        self.cnn_basic = nn.Sequential(
+            nn.Conv2d(self.input_stack, 8, kernel_size=4, stride=2),  ## (1,4,96,96)
+            nn.ReLU(),
+            nn.Conv2d(8, 16, kernel_size=3, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(16, 32, kernel_size=3, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=3, stride=1),
+            nn.ReLU(),
+            nn.Conv2d(128, 256, kernel_size=3, stride=1),
+            nn.ReLU(),
+            nn.Flatten()
+        )
+
+        self.policy_fc = nn.Sequential(
+            nn.Linear(256, 100),
+            nn.ReLU()
+        )
+        self.alpha_output = nn.Sequential(
+            nn.Linear(100, 3),
+            nn.Softplus()
+        )
+        self.beta_output = nn.Sequential(
+            nn.Linear(100, 3),
+            nn.Softplus()
+        )
+
+        ## step 3: weight initialization
+        if self.init_weight:
+            self.apply(self._weight_init)
+
+    @staticmethod
+    def _weight_init(m):  ## m is the Module
+        if isinstance(m, nn.Conv2d):
+            nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
+            nn.init.constant_(m.bias, 0.1)
+
+    def forward(self, state):
+        output = self.cnn_basic(state)
+        output = self.policy_fc(output)
+        alpha_output = self.alpha_output(output) + 1
+        beta_output = self.beta_output(output) + 1
+        return (alpha_output, beta_output), []
 
 
 class PPO_critic(nn.Module):
     def __init__(self, basic_config):
         super(PPO_critic, self).__init__()
+        ## step 1: read config from basic config
+        self.input_stack = basic_config["IMG_STACK"]
+        self.init_weight = basic_config["INIT_WEIGHT"]
 
-    def forward(self):
-        pass
+        ## step 2: define network architecture
+        self.cnn_basic = nn.Sequential(
+            nn.Conv2d(self.input_stack, 8, kernel_size=4, stride=2),  ## (1,4,96,96)
+            nn.ReLU(),
+            nn.Conv2d(8, 16, kernel_size=3, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(16, 32, kernel_size=3, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=3, stride=1),
+            nn.ReLU(),
+            nn.Conv2d(128, 256, kernel_size=3, stride=1),
+            nn.ReLU(),
+            nn.Flatten()
+        )
+        self.value_fc = nn.Sequential(
+            nn.Linear(256, 100),
+            nn.ReLU(),
+            nn.Linear(100, 1)
+        )
+
+        ## step 3: weight initialization
+        if self.init_weight:
+            self.apply(self._weight_init)
+
+    @staticmethod
+    def _weight_init(m):  ## m is the Module
+        if isinstance(m, nn.Conv2d):
+            nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
+            nn.init.constant_(m.bias, 0.1)
+
+    def forward(self, state):
+        output = self.cnn_basic(state)
+        value = self.value_fc(output)
+        return value
