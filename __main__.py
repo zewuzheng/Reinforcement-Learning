@@ -35,7 +35,7 @@ basic_config = {
     "CRITIC_LR": 0.0001,
     "DEVICE": device,
     "EPSILON": args.clip,
-    "ENV_RENDER": False,
+    "ENV_RENDER": args.render,
     "GAMMA": args.gamma,
     "GAME": "CarRacing-v0",
     "GAME_SEED": args.seed,

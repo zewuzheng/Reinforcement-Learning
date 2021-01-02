@@ -2,6 +2,7 @@ import torch
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 import torch.optim as optim
 import numpy as np
+import torch.nn.functional as F
 
 from Env_wrapper import Environ
 from PPO_net import PPO_net
@@ -58,11 +59,12 @@ class PPO_train():
                 s2_loss = advantages[ind] * torch.clamp(ratio, 1.0 - self.epsilon, 1.0 + self.epsilon)
                 policy_loss = -torch.mean(torch.min(s1_loss,
                                                     s2_loss))  ## why get mean in the end, because the comparation is related to each state action pair
-                v1_loss = (self.ppo_net.get_value(s[ind]) - current_q[ind]).pow(2)
-                v_ratio = self.ppo_net.get_value(s[ind]) / current_value[ind]
-                ## trick value function clipping
-                v2_loss = (torch.clamp(v_ratio, 1 - self.epsilon, 1 + self.epsilon) * current_value[ind] - current_q[ind]).pow(2)
-                value_loss = torch.mean(torch.min(v1_loss, v2_loss))
+                # v1_loss = (self.ppo_net.get_value(s[ind]) - current_q[ind]).pow(2)
+                # v_ratio = self.ppo_net.get_value(s[ind]) / current_value[ind]
+                # ## trick value function clipping
+                # v2_loss = (torch.clamp(v_ratio, 1 - self.epsilon, 1 + self.epsilon) * current_value[ind] - current_q[ind]).pow(2)
+                # value_loss = torch.mean(torch.min(v1_loss, v2_loss))
+                value_loss = F.smooth_l1_loss(self.ppo_net.get_value(s[ind]) , current_q[ind])
                 total_loss = policy_loss + value_loss
                 self.optimizer.zero_grad()
                 total_loss.backward()
