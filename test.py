@@ -123,23 +123,23 @@ from PPO_utils import Replay_buffer
 #             break
 
 #%%
-# import gym
-# import matplotlib.pyplot as plt
-# import numpy as np
-# env = gym.make('CarRacing-v0')
-# state = env.reset()
-# for _ in range(30):
-#     action = [0.5,0.5,0]
-#     state_,_,_,_ = env.step(action)
-#
-# gray = np.dot(state_[..., :], [0.299, 0.587, 0.114])
-#
-# plt.imshow(state_)
-# plt.show()
+import gym
+import matplotlib.pyplot as plt
+import numpy as np
+env = gym.make('CarRacing-v0')
+state = env.reset()
+for _ in range(30):
+    action = [0.5,0.5,0]
+    state_,_,_,_ = env.step(action)
+
+gray = np.dot(state_[..., :], [0.299, 0.587, 0.114])
+print(np.mean(state_[63:83, 38:58, 1]))
+plt.imshow(state_)
+plt.show()
 
 #%%
-import torch
-import torch.nn as nn
-a = PPO_net(basic_config)
-a.load_model('models/ppo_latest_ac.pt')
-print(a.state_dict())
+# import torch
+# import torch.nn as nn
+# a = PPO_net(basic_config)
+# a.load_model('models/ppo_latest_ac.pt')
+# print(a.state_dict())

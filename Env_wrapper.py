@@ -18,27 +18,27 @@ class Environ():
         self.stack = [img_gray] * self.img_stack  # four frames for decision
         return np.array(self.stack)
 
-    def step(self, action):
+    def step(self, action, game_timer):
         total_reward = 0
-        for i in range(8):
+        for i in range(4):
             img_rgb, reward, die, _ = self.env.step(action)
             #don't penalize "die state"
-            # if die:
-            #     reward += 100
-            # green penalty
-            if np.mean(img_rgb[63:83, 38:58, 1]) > 180.0: # 185.0:
-                reward -= 0.05
+            if die:
+                reward += 100
+            ## green penalty
+            if np.mean(img_rgb[63:83, 38:58, 1]) > 180.0 and game_timer > 15: # 185.0: 63:83, 38:58
+                reward -= 5    #              reward -= 0.05
             total_reward += reward
             # if no reward recently, end the episode
-            # done = True if self.av_r(reward) <= -0.1 else False  ## -0.1
-            # if done or die:
-            if die:
+            done = True if self.av_r(reward) <= -0.1 else False  ## -0.1
+            if done or die:
+            # if die:
                 break
         img_gray = self.rgb2gray(img_rgb)
         self.stack.pop(0)
         self.stack.append(img_gray)
         assert len(self.stack) == 4
-        return np.array(self.stack), total_reward, [], die  #done
+        return np.array(self.stack), total_reward, done, die  #done
 
     def render(self, *arg):
         self.env.render(*arg)

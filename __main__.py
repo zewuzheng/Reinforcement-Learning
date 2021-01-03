@@ -44,7 +44,7 @@ basic_config = {
     "LR_RATE": 1e-3,
     "MAX_TRAIN_STEP": 100000,
     "PPO_EP": 10,
-    "STATE_SIZE": (4, 96, 96),
+    "STATE_SIZE":  (args.img_stack, 96, 96),
     "STORE": args.store,
     "USE_VIS": args.vis,
     "LOAD_MODEL": args.load
