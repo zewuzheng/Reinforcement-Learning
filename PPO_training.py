@@ -32,7 +32,7 @@ class PPO_train():
         self.env = Base_env(basic_config)
         self.render = basic_config["ENV_RENDER"]
         self.plot_result = Plot_result(basic_config["GAME"],
-                                       f"Agent_score_gamma_{self.gamma}_lambda_{self.plambda}_advnorm_" 
+                                       f"Agent_score_gamma_{self.gamma}_lambda_{self.plambda}_advnorm_"
                                        f"{self.adv_norm}_valnorm_{self.val_norm}_epsilon_{self.epsilon}",
                                        "episode", "score")
         self.plot_loss = Plot_result(basic_config["GAME"], "PPO_loss", "episode", "loss")
@@ -50,10 +50,10 @@ class PPO_train():
         mask = torch.tensor(self.replay_buffer.buffer['mask'], dtype=torch.double).to(self.device).view(-1, 1)
         ## mask final state
         mask[-1] = 0
-        # pre_return = 0
+        pre_return = 0
         pre_advantage = 0
-        # returns = torch.Tensor(self.replay_buffer.buffer_size).to(self.device)
-        advantages = torch.zeros_like(r, dtype = torch.double).to(self.device)
+        returns = torch.zeros_like(r, dtype=torch.double).to(self.device)
+        advantages = torch.zeros_like(r, dtype=torch.double).to(self.device)
 
         with torch.no_grad():
             current_value = self.ppo_net.get_value(s)
@@ -61,13 +61,14 @@ class PPO_train():
             delta = current_q - current_value
             ## compute GAE advantage
             for i in reversed(range(self.replay_buffer.buffer_size)):
-                #returns[i] = r[i] + self.gamma * pre_return * mask[i]
+                returns[i] = r[i] + self.gamma * pre_return * mask[i]
                 advantages[i] = delta[i] + self.gamma * self.plambda * pre_advantage * mask[i]
-                #print(delta[i],"  ",delta[i].size(), "                   adv", advantages[i],"_____", advantages[i].size())
+                # print(delta[i],"  ",delta[i].size(), "                   adv", advantages[i],"_____", advantages[i].size())
                 pre_advantage = advantages[i]
+                pre_return = returns[i]
             ### advantages normalization......
             if self.adv_norm:
-                advantages = (advantages - advantages.mean())/ (advantages.std() + 1e-8)       #- advantages.mean())
+                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)  # - advantages.mean())
 
         ## update PPO
         for _ in range(self.PPO_epoch):
@@ -85,10 +86,11 @@ class PPO_train():
                                                     s2_loss))  ## why get mean in the end, because the comparation is related to each state action pair
 
                 if self.val_norm:
-                    value_loss = torch.mean((self.ppo_net.get_value(s[ind]) - current_q[ind]).pow(2))  #returns[ind]
+                    value_loss = torch.mean((self.ppo_net.get_value(s[ind]) - current_q[ind]).pow(2)) / returns[
+                        ind].std()  # returns[ind]
                 else:
-                    value_loss = torch.mean((self.ppo_net.get_value(s[ind]) - current_q[ind]).pow(2))  # returns[ind])
-                    #value_loss = F.smooth_l1_loss(self.ppo_net.get_value(s[ind]), current_q[ind])
+                    #value_loss = torch.mean((self.ppo_net.get_value(s[ind]) - current_q[ind]).pow(2))  # returns[ind])
+                    value_loss = F.smooth_l1_loss(self.ppo_net.get_value(s[ind]), current_q[ind])
                 total_loss = policy_loss + value_loss
                 self.optimizer.zero_grad()
                 total_loss.backward()
@@ -109,16 +111,17 @@ class PPO_train():
                 temp_state = []
                 rm_index = []
                 action, action_logp = self.ppo_net.get_action(state)  ## action in range 0 to 1
-                trans = self.env.step(action, env_index)
-                for i, j in zip(env_index,range(len(env_index))):
+                trans = self.env.step(action, env_index, t)
+                for i, j in zip(env_index, range(len(env_index))):
                     [state_, reward, done, die, reward_real] = list(trans[j])
                     mask = 0 if (done or die) else 1
                     if len(env_index) == 1:
                         self.replay_buffer.add_sample(state, action, reward, state_,
-                                          action_logp, mask, i)
+                                                      action_logp, mask, i)
                     else:
-                        self.replay_buffer.add_sample(state[j], action if self.env_pall == 1 else action[j], reward, state_,
-                                          action_logp if self.env_pall == 1 else action_logp[j], mask, i)
+                        self.replay_buffer.add_sample(state[j], action if self.env_pall == 1 else action[j], reward,
+                                                      state_,
+                                                      action_logp if self.env_pall == 1 else action_logp[j], mask, i)
 
                     if self.replay_buffer.is_ready():
                         self.update()
@@ -128,6 +131,13 @@ class PPO_train():
                     else:
                         rm_index.append(i)
                         step += 1
+
+                        if step % 10 == 0:
+                            self.ppo_net.save_model()
+                            if self.vis:
+                                self.plot_result(step, self.m_average_score)
+                                self.plot_loss(step, self.total_loss)
+
                     score += reward_real
 
                 if rm_index:
@@ -141,9 +151,8 @@ class PPO_train():
 
                 if not env_index:
                     break
-                    
-            score = score / self.env_pall
 
+            score = score / self.env_pall
             self.m_average_score = (1 - 0.01 * self.env_pall) * self.m_average_score + 0.01 * self.env_pall * score
 
             #### learning rate adjusting ~~~~~~~~~~~~~~
@@ -151,10 +160,10 @@ class PPO_train():
                 if self.m_average_score < 250 and lr_index == 0:
                     p['lr'] = 0.0015
                     lr_index = 1
-                elif 250 <=self.m_average_score < 650 and lr_index == 1:
-                    p['lr'] = 0.001
+                elif 250 <= self.m_average_score < 600 and lr_index == 1:
+                    p['lr'] = 0.0008
                     lr_index = 2
-                elif 650 <= self.m_average_score < 740 and lr_index == 2:
+                elif 600 <= self.m_average_score < 740 and lr_index == 2:
                     p['lr'] = 0.0003
                     lr_index = 3
                 elif 740 <= self.m_average_score < 800 and lr_index == 3:
@@ -165,12 +174,6 @@ class PPO_train():
                 else:
                     pass
                 print("current learning rate is, ", p['lr'])
-
-            if step % 10 == 0:
-                self.ppo_net.save_model()
-                if self.vis:
-                    self.plot_result(step, self.m_average_score)
-                    #self.plot_loss(step, self.total_loss)
 
             if self.m_average_score > 900:
                 print("Our agent is performing over threshold, ending training")

@@ -45,7 +45,7 @@ basic_config = {
     "DEVICE": device,
     "EPSILON": args.clip,
     "ENV_RENDER": args.render,
-    'ENV_PALL': 1,
+    'ENV_PALL': 8,
     "GAMMA": args.gamma,
     "GAME": "CarRacing-v0",
     "GAME_SEED": args.seed,
@@ -64,7 +64,7 @@ basic_config = {
 if use_cuda:
     torch.cuda.manual_seed(basic_config["GAME_SEED"])
 
-ray.init(num_cpus=6, num_gpus=1)
+ray.init(num_cpus=8, num_gpus=1)
 ppo_training = PPO_train(basic_config)
 ppo_training.train()
 
