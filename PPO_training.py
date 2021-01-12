@@ -12,17 +12,9 @@ from PPO_utils import Plot_result
 
 class PPO_train():
     def __init__(self, basic_config):
-        self.PPO_epoch = basic_config["PPO_EP"]
-        self.max_train_step = basic_config["MAX_TRAIN_STEP"]
+        self.bc = basic_config
         self.device = basic_config["DEVICE"]
-        self.vis = basic_config["USE_VIS"]
         self.gamma = basic_config["GAMMA"]
-        self.plambda = basic_config["LAMBDA"]
-        self.adv_norm = basic_config["ADV_NORM"]
-        self.val_norm = basic_config["VAL_NORM"]
-        self.epsilon = basic_config["EPSILON"]
-        self.batch_size = basic_config["BATCH_SIZE"]
-        self.ac = basic_config['AC_STYLE']
         self.env_pall = basic_config['ENV_PALL']
         self.ppo_net = PPO_net(basic_config).double().to(self.device)
         if basic_config["LOAD_MODEL"]:
@@ -30,10 +22,9 @@ class PPO_train():
         self.replay_buffer = Replay_buffer(basic_config)
         self.optimizer = optim.Adam(self.ppo_net.parameters(), lr=basic_config["LR_RATE"])
         self.env = Base_env(basic_config)
-        self.render = basic_config["ENV_RENDER"]
         self.plot_result = Plot_result(basic_config["GAME"],
-                                       f"Agent_score_gamma_{self.gamma}_lambda_{self.plambda}_advnorm_"
-                                       f"{self.adv_norm}_valnorm_{self.val_norm}_epsilon_{self.epsilon}",
+                                       f"Agent_score_gamma_{self.gamma}_lambda_{self.bc['LAMBDA']}_advnorm_"
+                                       f"{self.bc['ADV_NORM']}_valnorm_{self.bc['VAL_NORM']}_epsilon_{self.bc['EPSILON']}_comment_{basic_config['COMMENT']}",
                                        "episode", "score")
         self.plot_loss = Plot_result(basic_config["GAME"], "PPO_loss", "episode", "loss")
         self.total_loss = 0
@@ -62,18 +53,18 @@ class PPO_train():
             ## compute GAE advantage
             for i in reversed(range(self.replay_buffer.buffer_size)):
                 returns[i] = r[i] + self.gamma * pre_return * mask[i]
-                advantages[i] = delta[i] + self.gamma * self.plambda * pre_advantage * mask[i]
+                advantages[i] = delta[i] + self.gamma * self.bc["LAMBDA"] * pre_advantage * mask[i]
                 # print(delta[i],"  ",delta[i].size(), "                   adv", advantages[i],"_____", advantages[i].size())
                 pre_advantage = advantages[i]
                 pre_return = returns[i]
             ### advantages normalization......
-            if self.adv_norm:
+            if self.bc["ADV_NORM"]:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)  # - advantages.mean())
 
         ## update PPO
-        for _ in range(self.PPO_epoch):
-            for ind in BatchSampler(SubsetRandomSampler(range(self.replay_buffer.buffer_size)), self.batch_size, False):
-                if self.ac:
+        for _ in range(self.bc['PPO_EP']):
+            for ind in BatchSampler(SubsetRandomSampler(range(self.replay_buffer.buffer_size)), self.bc["BATCH_SIZE"], False):
+                if self.bc['AC_STYLE']:
                     print("updating actor critic agent!!!!!!!!!!!!!!!!")
                 else:
                     print("updating normal agent!!!!!!!!!!!!!!")
@@ -81,11 +72,11 @@ class PPO_train():
                 ratio = torch.exp(new_logp - old_logp[ind])
                 s1_loss = advantages[ind] * ratio  ## * is elementwise product for tensor
                 ## policy network clipping
-                s2_loss = advantages[ind] * torch.clamp(ratio, 1.0 - self.epsilon, 1.0 + self.epsilon)
+                s2_loss = advantages[ind] * torch.clamp(ratio, 1.0 - self.bc["EPSILON"], 1.0 + self.bc["EPSILON"])
                 policy_loss = torch.mean(-torch.min(s1_loss,
                                                     s2_loss))  ## why get mean in the end, because the comparation is related to each state action pair
 
-                if self.val_norm:
+                if self.bc["VAL_NORM"]:
                     value_loss = torch.mean((self.ppo_net.get_value(s[ind]) - current_q[ind]).pow(2)) / returns[
                         ind].std()  # returns[ind]
                 else:
@@ -101,7 +92,7 @@ class PPO_train():
 
     def train(self):
         step = 0
-        while step <= self.max_train_step:
+        while step <= self.bc["MAX_TRAIN_STEP"]:
             state = self.env.reset()
             score = 0
             lr_index = 0
@@ -134,7 +125,7 @@ class PPO_train():
 
                         if step % 10 == 0:
                             self.ppo_net.save_model()
-                            if self.vis:
+                            if self.bc["USE_VIS"]:
                                 self.plot_result(step, self.m_average_score)
                                 self.plot_loss(step, self.total_loss)
 
@@ -144,7 +135,7 @@ class PPO_train():
                     for ind in rm_index:
                         env_index.remove(ind)
 
-                if self.render:
+                if self.bc["ENV_RENDER"]:
                     self.env.render()
 
                 state = np.array(temp_state)

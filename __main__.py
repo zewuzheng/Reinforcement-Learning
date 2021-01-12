@@ -22,6 +22,7 @@ parser.add_argument('-actor_critic', action='store_true', default = False, help=
 parser.add_argument('-val_norm', action='store_true', default = False, help='Value network norm (default: False)')
 parser.add_argument('-adv_norm', action='store_true', default = False, help='Advantages norm (default: False)')
 parser.add_argument('-use_cpu', action='store_true', default = False, help='Use cpu instead (default: False)')
+parser.add_argument('-comment', default='', metavar= 'Comment',help='comment on your setting')
 
 
 args = parser.parse_args()
@@ -42,6 +43,7 @@ basic_config = {
     "ADV_NORM": args.adv_norm,
     "BATCH_SIZE": 128,
     "BUFFER_SIZE": 2048,
+    "COMMENT": args.comment,
     "DEVICE": device,
     "EPSILON": args.clip,
     "ENV_RENDER": args.render,
