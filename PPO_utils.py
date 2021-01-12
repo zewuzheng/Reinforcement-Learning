@@ -11,12 +11,24 @@ class Replay_buffer(object):
         self.buffer_count = 0
         self.data_type = np.dtype([('s', np.float64, self.state_size), ('a', np.float64, self.action_size),
                                    ('r', np.float64), ('s_pi', np.float64, self.state_size),
-                                   ('old_logp', np.float64)])
-        self.buffer = np.empty(self.buffer_size, dtype=self.data_type)
+                                   ('old_logp', np.float64), ('mask', np.int)])
+        self.ind_buffer = {}
+        self.buffer = [] #np.empty(0, dtype=self.data_type)
 
-    def add_sample(self, s, a, r, s_pi, logp):
-        self.buffer[self.buffer_count] = (s, a, r, s_pi, logp)
+    def add_sample(self, s, a, r, s_pi, logp, mask, index):
+        if self.buffer_count == 0:
+            self.buffer = []
+
+        if index not in self.ind_buffer:
+            self.ind_buffer[index] = []
+        self.ind_buffer[index].append((s, a, r, s_pi, logp, mask))
         self.buffer_count += 1
+        if self.buffer_count == self.buffer_size:
+            for key_ind in self.ind_buffer.keys():
+                self.buffer = self.buffer + self.ind_buffer[key_ind]  #self.buffer + self.ind_buffer[key_ind])
+
+            self.buffer = np.array(self.buffer, dtype=self.data_type)
+            self.ind_buffer = {}
 
     def is_ready(self):
         if self.buffer_count == self.buffer_size:

@@ -4,6 +4,7 @@ import numpy as np
 from torch import nn
 from torch.distributions import Beta
 
+
 # %%
 class PPO_net(nn.Module):
     def __init__(self, basic_config):
@@ -17,27 +18,32 @@ class PPO_net(nn.Module):
         else:
             self.policy_mix = PPO_mix(basic_config)
 
-    def load_model(self, path = None):
+    def load_model(self, path=None):
         if path is not None:
             self.load_state_dict(torch.load(path))
         else:
-            self.load_state_dict(torch.load(self.store_path))
+            self.load_state_dict(torch.load(self.store_path, map_location=torch.device('cpu')))
 
     def save_model(self):
         torch.save(self.state_dict(), self.store_path)
 
     @torch.no_grad()
     def get_action(self, state):
-        state1 = torch.from_numpy(state).double().to(self.device).unsqueeze(0)
+        if state.ndim == 4:
+            state1 = torch.from_numpy(state).double().to(self.device)
+        else:
+            state1 = torch.from_numpy(state).double().to(self.device).unsqueeze(0)
+
         (alpha, beta), _ = self.policy_mix.forward(state1)
+        # print("alpha: ", alpha, "beta: ", beta)
         dist = Beta(alpha, beta)
         act = dist.sample()
         if act.dim() == 1 and (act.size()[0] == 1 or not act.size()):
             act_logprob = dist.log_prob(act)
         else:
-            act_logprob = dist.log_prob(act).sum()
+            act_logprob = dist.log_prob(act).sum(dim = 1)
         act = act.squeeze().cpu().numpy()
-        act_logprob = act_logprob.item()
+        act_logprob = act_logprob.cpu().numpy()
         return act, act_logprob
 
     def get_value(self, state):
@@ -50,7 +56,7 @@ class PPO_net(nn.Module):
     def get_new_lp(self, state, action):
         (alpha, beta), _ = self.policy_mix.forward(state)
         dist = Beta(alpha, beta)
-        act_logprob = dist.log_prob(action).sum(dim = 1, keepdim = True)  ## n_batch * 1
+        act_logprob = dist.log_prob(action).sum(dim=1, keepdim=True)  ## n_batch * 1
         return act_logprob
 
 
@@ -64,17 +70,17 @@ class PPO_mix(nn.Module):
 
         ## step 2: define network architecture
         self.cnn_basic = nn.Sequential(
-            nn.Conv2d(self.input_stack, 8, kernel_size=4, stride=2),  ## (1,4,96,96)
+            nn.Conv2d(self.input_stack, 8, kernel_size=4, stride=2),  ## (1,4,96,96) -> (8, 47, 47)
             nn.ReLU(),
-            nn.Conv2d(8, 16, kernel_size=3, stride=2),
+            nn.Conv2d(8, 16, kernel_size=3, stride=2),  # (16, 23, 23)
             nn.ReLU(),
-            nn.Conv2d(16, 32, kernel_size=3, stride=2),
+            nn.Conv2d(16, 32, kernel_size=3, stride=2),  # (32, 11, 11)
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, stride=2),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2),  # (64, 5, 5)
             nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=3, stride=1),
+            nn.Conv2d(64, 128, kernel_size=3, stride=1),  # (128, 3, 3)
             nn.ReLU(),
-            nn.Conv2d(128, 256, kernel_size=3, stride=1),
+            nn.Conv2d(128, 256, kernel_size=3, stride=1),  # (256 ,1 , 1)
             nn.ReLU(),
             nn.Flatten()
         )
@@ -97,14 +103,20 @@ class PPO_mix(nn.Module):
         )
 
         ## step 3: weight initialization
-        if self.init_weight:
+        if self.init_weight != 'normal':
             self.apply(self._weight_init)
 
-    @staticmethod
-    def _weight_init(m):  ## m is the Module
+    def _weight_init(self, m):  ## m is the Module
         if isinstance(m, nn.Conv2d):
-            nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
+            if self.init_weight == 'xavier':
+                nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
+            elif self.init_weight == 'orthogonal':
+                nn.init.orthogonal(m.weight, gain=nn.init.calculate_gain('relu')) #, gain=nn.init.calculate_gain('relu')
             nn.init.constant_(m.bias, 0.1)
+        # elif isinstance(m, nn.Linear):
+        #     nn.init.orthogonal(m.weight, gain=nn.init.calculate_gain('relu')) # , gain=nn.init.calculate_gain('relu')
+        #     nn.init.constant_(m.bias, 0.1)
+        print(f"Weight init by {self.init_weight} !!!!!!!!!!!")
 
     def forward(self, state):
         output = self.cnn_basic(state)
@@ -154,14 +166,20 @@ class PPO_actor(nn.Module):
         )
 
         ## step 3: weight initialization
-        if self.init_weight:
+        if self.init_weight != 'normal':
             self.apply(self._weight_init)
 
-    @staticmethod
-    def _weight_init(m):  ## m is the Module
+    def _weight_init(self, m):  ## m is the Module
         if isinstance(m, nn.Conv2d):
-            nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
+            if self.init_weight == 'xavier':
+                nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
+            elif self.init_weight == 'orthogonal':
+                nn.init.orthogonal(m.weight, gain=nn.init.calculate_gain('relu')) #, gain=nn.init.calculate_gain('relu')
             nn.init.constant_(m.bias, 0.1)
+        # elif isinstance(m, nn.Linear):
+        #     nn.init.orthogonal(m.weight, gain=nn.init.calculate_gain('relu')) # , gain=nn.init.calculate_gain('relu')
+        #     nn.init.constant_(m.bias, 0.1)
+        print(f"Weight init by {self.init_weight} !!!!!!!!!!!")
 
     def forward(self, state):
         output = self.cnn_basic(state)
@@ -201,14 +219,30 @@ class PPO_critic(nn.Module):
         )
 
         ## step 3: weight initialization
-        if self.init_weight:
+        if self.init_weight != 'normal':
             self.apply(self._weight_init)
 
-    @staticmethod
-    def _weight_init(m):  ## m is the Module
+    def _weight_init(self, m):  ## m is the Module
         if isinstance(m, nn.Conv2d):
-            nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
+            if self.init_weight == 'xavier':
+                nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
+            elif self.init_weight == 'orthogonal':
+                nn.init.orthogonal(m.weight, gain=nn.init.calculate_gain('relu')) #, gain=nn.init.calculate_gain('relu')
             nn.init.constant_(m.bias, 0.1)
+        # elif isinstance(m, nn.Linear):
+        #     nn.init.orthogonal(m.weight, gain=nn.init.calculate_gain('relu')) # , gain=nn.init.calculate_gain('relu')
+        #     nn.init.constant_(m.bias, 0.1)
+        print(f"Weight init by {self.init_weight} !!!!!!!!!!!")
+        # if isinstance(m, nn.Conv2d):
+        #     if self.init_weight == 'xavier':
+        #         nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
+        #     elif self.init_weight == 'orthogonal':
+        #         nn.init.orthogonal(m.weight, gain=nn.init.calculate_gain('relu')) #, gain=nn.init.calculate_gain('relu')
+        #     nn.init.constant_(m.bias, 0.1)
+        # elif isinstance(m, nn.Linear):
+        #     nn.init.orthogonal(m.weight, gain=nn.init.calculate_gain('relu')) # , gain=nn.init.calculate_gain('relu')
+        #     nn.init.constant_(m.bias, 0.1)
+        # print(f"Weight init by {self.init_weight} !!!!!!!!!!!")
 
     def forward(self, state):
         output = self.cnn_basic(state)

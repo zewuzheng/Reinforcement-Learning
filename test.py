@@ -1,14 +1,9 @@
-import torch
-from torch import nn
 from PPO_net import PPO_net
-from torch.distributions import Beta
-from Env_wrapper import Environ_test
-
-
+from Env_wrapper import Environ
 import argparse
 import torch
-from PPO_training import PPO_train
 from pyvirtualdisplay import Display
+import numpy as np
 
 parser = argparse.ArgumentParser(description='Train a PPO agent for the CarRacing-v0')
 parser.add_argument('-gamma', type=float, default=0.99, metavar='G', help='discount factor (default: 0.99)')
@@ -34,7 +29,7 @@ print("using device: ", device)
 basic_config = {
     "ACTION_SIZE": (3,),
     "ACTOR_LR": 0.0001,
-    "AC_STYLE": True,
+    "AC_STYLE": args.actor_critic,
     "BATCH_SIZE": 128,
     "BUFFER_SIZE": 2000,
     "CRITIC_LR": 0.0001,
@@ -49,12 +44,32 @@ basic_config = {
     "LR_RATE": 1e-3,
     "MAX_TRAIN_STEP": 100000,
     "PPO_EP": 10,
-    "STATE_SIZE": (4, 96, 96),
+    "STATE_SIZE":  (args.img_stack, 96, 96),
     "STORE": args.store,
     "USE_VIS": args.vis,
     "LOAD_MODEL": args.load
 }
 
+ppo = PPO_net(basic_config).double().to(device)
+env = Environ(basic_config)
+ppo.load_model()
+average_reward = []
+for _ in range(10):
+    round_reward = 0
+    state = env.reset()
+    while True:
+        action, _ = ppo.get_action(state)
+        state_, rewards, done, die, reward = env.step(action* np.array([2., 1., 1.]) + np.array([-1., 0., 0.]), 10)
+        round_reward += reward
+        round_reward += reward
+        env.render()
+        state = state_
+        if die:
+            break
+    average_reward.append(round_reward)
+    print(f"The reward of current round is {round_reward}")
+    print(f"The average reward is {np.mean(average_reward)}")
+##
 from PPO_utils import Replay_buffer
 # action = torch.randn((4, 3,))
 # dist = Beta(2, 2)
@@ -106,36 +121,21 @@ from PPO_utils import Replay_buffer
 #     act_logprob = m.log_prob(act).sum()
 # print(act_logprob)
 
+
 #%%
-# import numpy as np
 # import gym
-# ppo = PPO_net(basic_config).double().to(device)
-# env = Environ_test(basic_config)
-# ppo.load_model('models/ppo_latest.pt')
-# while True:
-#     state = env.reset()
-#     while True:
-#         action, _ = ppo.get_action(state)
-#         state_, reward, done, die = env.step(action* np.array([2., 1., 1.]) + np.array([-1., 0., 0.]))
-#         env.render()
-#         state = state_
-#         if die:
-#             break
-
-#%%
-import gym
-import matplotlib.pyplot as plt
-import numpy as np
-env = gym.make('CarRacing-v0')
-state = env.reset()
-for _ in range(30):
-    action = [0.5,0.5,0]
-    state_,_,_,_ = env.step(action)
-
-gray = np.dot(state_[..., :], [0.299, 0.587, 0.114])
-print(np.mean(state_[63:83, 38:58, 1]))
-plt.imshow(state_)
-plt.show()
+# import matplotlib.pyplot as plt
+# import numpy as np
+# env = gym.make('CarRacing-v0')
+# state = env.reset()
+# for _ in range(30):
+#     action = [0.5,0.5,0]
+#     state_,_,_,_ = env.step(action)
+#
+# gray = np.dot(state_[..., :], [0.299, 0.587, 0.114])
+# print(np.mean(state_[63:83, 38:58, 1]))
+# plt.imshow(state_)
+# plt.show()
 
 #%%
 # import torch

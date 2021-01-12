@@ -4,7 +4,7 @@ import torch.optim as optim
 import numpy as np
 import torch.nn.functional as F
 
-from Env_wrapper import Environ
+from Env_wrapper import Base_env
 from PPO_net import PPO_net
 from PPO_utils import Replay_buffer
 from PPO_utils import Plot_result
@@ -17,17 +17,24 @@ class PPO_train():
         self.device = basic_config["DEVICE"]
         self.vis = basic_config["USE_VIS"]
         self.gamma = basic_config["GAMMA"]
+        self.plambda = basic_config["LAMBDA"]
+        self.adv_norm = basic_config["ADV_NORM"]
+        self.val_norm = basic_config["VAL_NORM"]
         self.epsilon = basic_config["EPSILON"]
         self.batch_size = basic_config["BATCH_SIZE"]
         self.ac = basic_config['AC_STYLE']
+        self.env_pall = basic_config['ENV_PALL']
         self.ppo_net = PPO_net(basic_config).double().to(self.device)
         if basic_config["LOAD_MODEL"]:
             self.ppo_net.load_model()
         self.replay_buffer = Replay_buffer(basic_config)
         self.optimizer = optim.Adam(self.ppo_net.parameters(), lr=basic_config["LR_RATE"])
-        self.env = Environ(basic_config)
+        self.env = Base_env(basic_config)
         self.render = basic_config["ENV_RENDER"]
-        self.plot_result = Plot_result(basic_config["GAME"], "Agent_score", "episode", "score")
+        self.plot_result = Plot_result(basic_config["GAME"],
+                                       f"Agent_score_gamma_{self.gamma}_lambda_{self.plambda}_advnorm_" 
+                                       f"{self.adv_norm}_valnorm_{self.val_norm}_epsilon_{self.epsilon}",
+                                       "episode", "score")
         self.plot_loss = Plot_result(basic_config["GAME"], "PPO_loss", "episode", "loss")
         self.total_loss = 0
         self.m_average_score = 0
@@ -40,11 +47,27 @@ class PPO_train():
         r = torch.tensor(self.replay_buffer.buffer['r'], dtype=torch.double).to(self.device).view(-1, 1)
         s_pi = torch.tensor(self.replay_buffer.buffer['s_pi'], dtype=torch.double).to(self.device)
         old_logp = torch.tensor(self.replay_buffer.buffer['old_logp'], dtype=torch.double).to(self.device).view(-1, 1)
+        mask = torch.tensor(self.replay_buffer.buffer['mask'], dtype=torch.double).to(self.device).view(-1, 1)
+        ## mask final state
+        mask[-1] = 0
+        # pre_return = 0
+        pre_advantage = 0
+        # returns = torch.Tensor(self.replay_buffer.buffer_size).to(self.device)
+        advantages = torch.zeros_like(r, dtype = torch.double).to(self.device)
 
         with torch.no_grad():
             current_value = self.ppo_net.get_value(s)
             current_q = r + self.gamma * self.ppo_net.get_value(s_pi)
-            advantages = current_q - current_value
+            delta = current_q - current_value
+            ## compute GAE advantage
+            for i in reversed(range(self.replay_buffer.buffer_size)):
+                #returns[i] = r[i] + self.gamma * pre_return * mask[i]
+                advantages[i] = delta[i] + self.gamma * self.plambda * pre_advantage * mask[i]
+                #print(delta[i],"  ",delta[i].size(), "                   adv", advantages[i],"_____", advantages[i].size())
+                pre_advantage = advantages[i]
+            ### advantages normalization......
+            if self.adv_norm:
+                advantages = (advantages - advantages.mean())/ (advantages.std() + 1e-8)       #- advantages.mean())
 
         ## update PPO
         for _ in range(self.PPO_epoch):
@@ -60,60 +83,95 @@ class PPO_train():
                 s2_loss = advantages[ind] * torch.clamp(ratio, 1.0 - self.epsilon, 1.0 + self.epsilon)
                 policy_loss = torch.mean(-torch.min(s1_loss,
                                                     s2_loss))  ## why get mean in the end, because the comparation is related to each state action pair
-                # v1_loss = (self.ppo_net.get_value(s[ind]) - current_q[ind]).pow(2)
-                # v_ratio = self.ppo_net.get_value(s[ind]) / current_value[ind]
-                # ## trick value function clipping
-                # v2_loss = (torch.clamp(v_ratio, 1 - self.epsilon, 1 + self.epsilon) * current_value[ind] - current_q[ind]).pow(2)
-                # value_loss = torch.mean(torch.min(v1_loss, v2_loss))
-                value_loss = F.smooth_l1_loss(self.ppo_net.get_value(s[ind]), current_q[ind])
+
+                if self.val_norm:
+                    value_loss = torch.mean((self.ppo_net.get_value(s[ind]) - current_q[ind]).pow(2))  #returns[ind]
+                else:
+                    value_loss = torch.mean((self.ppo_net.get_value(s[ind]) - current_q[ind]).pow(2))  # returns[ind])
+                    #value_loss = F.smooth_l1_loss(self.ppo_net.get_value(s[ind]), current_q[ind])
                 total_loss = policy_loss + value_loss
                 self.optimizer.zero_grad()
                 total_loss.backward()
                 ### trick norm clipping
                 # torch.nn.utils.clip_grad_norm_(self.ppo_net.parameters(), 0.5)
-                ### fine-grained control for high speed states
-                if self.m_average_score > 700:
-                    self.optimizer = optim.Adam(self.ppo_net.parameters(), lr=0.0001)
-                else:
-                    self.optimizer = optim.Adam(self.ppo_net.parameters(), lr=0.001)
                 self.optimizer.step()
                 self.total_loss = total_loss.item()
 
     def train(self):
-        score_all = []
-        for step in range(self.max_train_step):
+        step = 0
+        while step <= self.max_train_step:
             state = self.env.reset()
             score = 0
-            game_time = 0
-            while True:
+            lr_index = 0
+            env_index = list(range(self.env_pall))
+            for t in range(1000):
                 print(f'Begin in {step} step')
-                game_time += 1
+                temp_state = []
+                rm_index = []
                 action, action_logp = self.ppo_net.get_action(state)  ## action in range 0 to 1
-                state_, reward, done, die = self.env.step(action * np.array([2., 1., 1.]) + np.array([-1., 0., 0.]),
-                                                          game_time)
-                ### reward clipping
-                ## reward_clip = np.clip(reward, -10, 10)
-                self.replay_buffer.add_sample(state, action, reward, state_, action_logp)
+                trans = self.env.step(action, env_index)
+                for i, j in zip(env_index,range(len(env_index))):
+                    [state_, reward, done, die, reward_real] = list(trans[j])
+                    mask = 0 if (done or die) else 1
+                    if len(env_index) == 1:
+                        self.replay_buffer.add_sample(state, action, reward, state_,
+                                          action_logp, mask, i)
+                    else:
+                        self.replay_buffer.add_sample(state[j], action if self.env_pall == 1 else action[j], reward, state_,
+                                          action_logp if self.env_pall == 1 else action_logp[j], mask, i)
+
+                    if self.replay_buffer.is_ready():
+                        self.update()
+
+                    if not (done or die):
+                        temp_state.append(state_)
+                    else:
+                        rm_index.append(i)
+                        step += 1
+                    score += reward_real
+
+                if rm_index:
+                    for ind in rm_index:
+                        env_index.remove(ind)
+
                 if self.render:
                     self.env.render()
 
-                if self.replay_buffer.is_ready():
-                    self.update()
+                state = np.array(temp_state)
 
-                score += reward
-                state = state_
-
-                if done or die or game_time >= 10000:
+                if not env_index:
                     break
+                    
+            score = score / self.env_pall
 
-            self.m_average_score = 0.99 * self.m_average_score + 0.01 * score
+            self.m_average_score = (1 - 0.01 * self.env_pall) * self.m_average_score + 0.01 * self.env_pall * score
+
+            #### learning rate adjusting ~~~~~~~~~~~~~~
+            for p in self.optimizer.param_groups:
+                if self.m_average_score < 250 and lr_index == 0:
+                    p['lr'] = 0.0015
+                    lr_index = 1
+                elif 250 <=self.m_average_score < 650 and lr_index == 1:
+                    p['lr'] = 0.001
+                    lr_index = 2
+                elif 650 <= self.m_average_score < 740 and lr_index == 2:
+                    p['lr'] = 0.0003
+                    lr_index = 3
+                elif 740 <= self.m_average_score < 800 and lr_index == 3:
+                    p['lr'] = 0.0001
+                    lr_index = 4
+                elif self.m_average_score >= 800 and lr_index == 4:
+                    p['lr'] = 0.00003
+                else:
+                    pass
+                print("current learning rate is, ", p['lr'])
+
             if step % 10 == 0:
                 self.ppo_net.save_model()
-                score_all.append(score)
                 if self.vis:
                     self.plot_result(step, self.m_average_score)
-                    self.plot_loss(step, self.total_loss)
+                    #self.plot_loss(step, self.total_loss)
 
-            if self.m_average_score > 880:
+            if self.m_average_score > 900:
                 print("Our agent is performing over threshold, ending training")
                 break
