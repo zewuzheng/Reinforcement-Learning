@@ -25,11 +25,11 @@ class Environ():
             img_rgb, reward, die, _ = self.env.step(action)
             reward_real += reward
             # don't penalize "die state"
-            # if die:
-            #     reward += 100
+            if die:
+               reward += 100
             ## green penalty
-            if np.mean(img_rgb[:, :, 1]) > 185.0:  # 185.0: 63:83, 38:58  and game_timer > 10
-                reward -= 0.05 #0.05  # reward -= 0.05
+            if np.mean(img_rgb[63:83, 38:58, 1]) > 165.0:  # 185.0: 63:83, 38:58  and game_timer > 10
+                reward -= 0.02 #0.05  # reward -= 0.05
             total_reward += reward
             # if no reward recently, end the episode
             done = True if self.av_r(reward) <= -0.1 else False

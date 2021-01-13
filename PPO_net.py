@@ -33,9 +33,9 @@ class PPO_net(nn.Module):
     @torch.no_grad()
     def get_action(self, state):
         if state.ndim == 4:
-            state1 = torch.from_numpy(state).double().to(self.device)
+            state1 = torch.from_numpy(state).float().to(self.device)
         else:
-            state1 = torch.from_numpy(state).double().to(self.device).unsqueeze(0)
+            state1 = torch.from_numpy(state).float().to(self.device).unsqueeze(0)
 
         (alpha, beta), _ = self.policy_mix.forward(state1)
         # print("alpha: ", alpha, "beta: ", beta)
@@ -119,7 +119,6 @@ class PPO_mix(nn.Module):
         # elif isinstance(m, nn.Linear):
         #     nn.init.orthogonal(m.weight, gain=nn.init.calculate_gain('relu')) # , gain=nn.init.calculate_gain('relu')
         #     nn.init.constant_(m.bias, 0.1)
-        print(f"Weight init by {self.init_weight} !!!!!!!!!!!")
 
     def forward(self, state):
         output = self.cnn_basic(state)
@@ -182,7 +181,6 @@ class PPO_actor(nn.Module):
         # elif isinstance(m, nn.Linear):
         #     nn.init.orthogonal(m.weight, gain=nn.init.calculate_gain('relu')) # , gain=nn.init.calculate_gain('relu')
         #     nn.init.constant_(m.bias, 0.1)
-        print(f"Weight init by {self.init_weight} !!!!!!!!!!!")
 
     def forward(self, state):
         output = self.cnn_basic(state)
@@ -235,7 +233,6 @@ class PPO_critic(nn.Module):
         # elif isinstance(m, nn.Linear):
         #     nn.init.orthogonal(m.weight, gain=nn.init.calculate_gain('relu')) # , gain=nn.init.calculate_gain('relu')
         #     nn.init.constant_(m.bias, 0.1)
-        print(f"Weight init by {self.init_weight} !!!!!!!!!!!")
         # if isinstance(m, nn.Conv2d):
         #     if self.init_weight == 'xavier':
         #         nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))

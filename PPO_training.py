@@ -14,7 +14,7 @@ class PPO_train():
         self.device = basic_config["DEVICE"]
         self.gamma = basic_config["GAMMA"]
         self.env_pall = basic_config['ENV_PALL']
-        self.ppo_net = PPO_net(basic_config).double().to(self.device)
+        self.ppo_net = PPO_net(basic_config).to(self.device)
         if basic_config["LOAD_MODEL"]:
             self.ppo_net.load_model()
         self.replay_buffer = Replay_buffer(basic_config)
@@ -28,19 +28,19 @@ class PPO_train():
 
     def update(self, buffer_length):
         ## buffer_size * shape
-        s = torch.tensor(self.replay_buffer.buffer['s'], dtype=torch.double).to(
+        s = torch.tensor(self.replay_buffer.buffer['s'], dtype=torch.float).to(
             self.device)  ## torch.double equals to torch.tensor.to(float64)
-        a = torch.tensor(self.replay_buffer.buffer['a'], dtype=torch.double).to(self.device)
-        r = torch.tensor(self.replay_buffer.buffer['r'], dtype=torch.double).to(self.device).view(-1, 1)
-        s_pi = torch.tensor(self.replay_buffer.buffer['s_pi'], dtype=torch.double).to(self.device)
-        old_logp = torch.tensor(self.replay_buffer.buffer['old_logp'], dtype=torch.double).to(self.device).view(-1, 1)
-        mask = torch.tensor(self.replay_buffer.buffer['mask'], dtype=torch.double).to(self.device).view(-1, 1)
+        a = torch.tensor(self.replay_buffer.buffer['a'], dtype=torch.float).to(self.device)
+        r = torch.tensor(self.replay_buffer.buffer['r'], dtype=torch.float).to(self.device).view(-1, 1)
+        s_pi = torch.tensor(self.replay_buffer.buffer['s_pi'], dtype=torch.float).to(self.device)
+        old_logp = torch.tensor(self.replay_buffer.buffer['old_logp'], dtype=torch.float).to(self.device).view(-1, 1)
+        mask = torch.tensor(self.replay_buffer.buffer['mask'], dtype=torch.float).to(self.device).view(-1, 1)
         ## mask final state
         mask[-1] = 0
         pre_return = 0
         pre_advantage = 0
-        returns = torch.zeros_like(r, dtype=torch.double).to(self.device)
-        advantages = torch.zeros_like(r, dtype=torch.double).to(self.device)
+        returns = torch.zeros_like(r, dtype=torch.float).to(self.device)
+        advantages = torch.zeros_like(r, dtype=torch.float).to(self.device)
 
         with torch.no_grad():
             current_value = self.ppo_net.get_value(s)
@@ -103,16 +103,16 @@ class PPO_train():
             #### learning rate adjusting ~~~~~~~~~~~~~~
             for p in self.optimizer.param_groups:
                 if m_average_score < 250 and lr_index == 0:
-                    p['lr'] = 0.0015
+                    p['lr'] = 0.001
                     lr_index = 1
                 elif 250 <= m_average_score < 600 and lr_index == 1:
-                    p['lr'] = 0.001
+                    p['lr'] = 0.0005
                     lr_index = 2
                 elif 600 <= m_average_score < 700 and lr_index == 2:
-                    p['lr'] = 0.0004
+                    p['lr'] = 0.0002
                     lr_index = 3
                 elif 700 <= m_average_score < 780 and lr_index == 3:
-                    p['lr'] = 0.0001
+                    p['lr'] = 0.00008
                     lr_index = 4
                 elif m_average_score >= 780 and lr_index == 4:
                     p['lr'] = 0.00003

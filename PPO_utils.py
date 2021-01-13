@@ -13,9 +13,9 @@ class Replay_buffer(object):
         self.action_size = basic_config["ACTION_SIZE"]
         self.buffer_size = basic_config["BUFFER_SIZE"]
         self.buffer_count = 0
-        self.data_type = np.dtype([('s', np.float64, self.state_size), ('a', np.float64, self.action_size),
-                                   ('r', np.float64), ('s_pi', np.float64, self.state_size),
-                                   ('old_logp', np.float64), ('mask', np.int)])
+        self.data_type = np.dtype([('s', np.float32, self.state_size), ('a', np.float32, self.action_size),
+                                   ('r', np.float32), ('s_pi', np.float32, self.state_size),
+                                   ('old_logp', np.float32), ('mask', np.int)])
         self.buffer = []  # np.empty(0, dtype=self.data_type)
 
     def add_sample(self, s, a, r, s_pi, logp, mask):
@@ -43,7 +43,7 @@ class Para_process():
     def __init__(self, basic_config):
         self.seed = np.random.randint(10000)
         self.render = basic_config['ENV_RENDER']
-        self.ppo = PPO_net(basic_config).double().to('cpu')
+        self.ppo = PPO_net(basic_config).to('cpu')
         self.ppo.device = torch.device('cpu')
         self.env = Environ(basic_config, self.seed)
 

@@ -23,6 +23,8 @@ parser.add_argument('-val_norm', action='store_true', default = False, help='Val
 parser.add_argument('-adv_norm', action='store_true', default = False, help='Advantages norm (default: False)')
 parser.add_argument('-use_cpu', action='store_true', default = False, help='Use cpu instead (default: False)')
 parser.add_argument('-comment', default='', metavar= 'Comment',help='comment on your setting')
+parser.add_argument('-cuda', default='cuda:0', metavar= 'Select cuda',help='assign gpu that execute task')
+
 
 
 args = parser.parse_args()
@@ -32,7 +34,7 @@ if args.server:
 
 use_cuda = torch.cuda.is_available()
 if not args.use_cpu and use_cuda:
-    device = torch.device('cuda')
+    device = torch.device(args.cuda)
 else:
     device = torch.device('cpu')
 print("using device: ", device)
@@ -47,7 +49,7 @@ basic_config = {
     "DEVICE": device,
     "EPSILON": args.clip,
     "ENV_RENDER": args.render,
-    'ENV_PALL': 7,
+    'ENV_PALL': 12,
     "GAMMA": args.gamma,
     "GAME": "CarRacing-v0",
     "GAME_SEED": args.seed,
@@ -66,7 +68,7 @@ basic_config = {
 if use_cuda:
     torch.cuda.manual_seed(basic_config["GAME_SEED"])
 
-ray.init(num_cpus=8, num_gpus=1)
+ray.init(num_cpus=13, num_gpus=1)
 ppo_training = PPO_train(basic_config)
 ppo_training.train()
 
