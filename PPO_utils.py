@@ -83,12 +83,13 @@ class Data_collecter():
 
     def get_buffer(self, m_average_score, net_param):
         self.step = 0
+        net_id = ray.put(net_param)
         self.buffer.clear()
         self.average_score = m_average_score
         while self.buffer.buffer_count < self.buffer.buffer_size:
             while self._idle_actors:
                 actors = self._idle_actors.popleft()
-                future = actors.collect_data.remote(net_param)
+                future = actors.collect_data.remote(net_id)
                 self._future_to_actor[future] = actors
 
             ready_idx, _ = ray.wait(list(self._future_to_actor.keys()))
