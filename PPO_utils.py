@@ -1,6 +1,10 @@
 import numpy as np
 import visdom
+import ray
 import torch
+from Env_wrapper import Environ
+from PPO_net import PPO_net
+from collections import deque
 
 
 class Replay_buffer(object):
@@ -12,30 +16,102 @@ class Replay_buffer(object):
         self.data_type = np.dtype([('s', np.float64, self.state_size), ('a', np.float64, self.action_size),
                                    ('r', np.float64), ('s_pi', np.float64, self.state_size),
                                    ('old_logp', np.float64), ('mask', np.int)])
-        self.ind_buffer = {}
-        self.buffer = [] #np.empty(0, dtype=self.data_type)
+        self.buffer = []  # np.empty(0, dtype=self.data_type)
 
-    def add_sample(self, s, a, r, s_pi, logp, mask, index):
-        if self.buffer_count == 0:
-            self.buffer = []
-
-        if index not in self.ind_buffer:
-            self.ind_buffer[index] = []
-        self.ind_buffer[index].append((s, a, r, s_pi, logp, mask))
+    def add_sample(self, s, a, r, s_pi, logp, mask):
+        self.buffer.append((s, a, r, s_pi, logp, mask))
         self.buffer_count += 1
-        if self.buffer_count == self.buffer_size:
-            for key_ind in self.ind_buffer.keys():
-                self.buffer = self.buffer + self.ind_buffer[key_ind]  #self.buffer + self.ind_buffer[key_ind])
 
-            self.buffer = np.array(self.buffer, dtype=self.data_type)
-            self.ind_buffer = {}
-
-    def is_ready(self):
-        if self.buffer_count == self.buffer_size:
-            self.buffer_count = 0
-            return True
+    def clear(self):
+        if type(self.buffer) == list:
+            self.buffer.clear()
         else:
-            return False
+            self.buffer = list(self.buffer)
+            self.buffer.clear()
+        self.buffer_count = 0
+
+
+@ray.remote(num_cpus=1)
+class Para_process():
+    """
+    rollout one episode of game, and collect them into replay buffer
+    input: the network  to be load
+
+    output: replay buffer in list: [(s, a, r , s_, log_p, mask)], total score
+    """
+
+    def __init__(self, basic_config):
+        self.seed = np.random.randint(10000)
+        self.render = basic_config['ENV_RENDER']
+        self.ppo = PPO_net(basic_config).double().to('cpu')
+        self.ppo.device = torch.device('cpu')
+        self.env = Environ(basic_config, self.seed)
+
+    def collect_data(self, net_param):
+        self.ppo.load_state_dict(net_param)
+        buffer = []
+        score = 0
+        t = 0
+        state = self.env.reset()
+        while True:
+            action, act_logp = self.ppo.get_action(state)
+            state_, reward, done, die, reward_real = self.env.step(
+                action * np.array([2., 1., 1.]) + np.array([-1., 0., 0.]), t)
+            mask = 0 if (done or die) else 1
+            buffer.append((state, action, reward, state_, act_logp, mask))
+            score += reward_real
+            state = state_
+            if self.render:
+                self.env.render()
+            if done or die:
+                break
+        print("collect data done....")
+        return buffer, score
+
+
+class Data_collecter():
+    """
+    collect data para from Para_process, and add them to replay buffer, this is a asyn process
+    """
+
+    def __init__(self, actor, basic_config):
+        self._idle_actors = deque(actor)
+        self.buffer = Replay_buffer(basic_config)
+        self.average_score = 0
+        self.step = 0
+        self._future_to_actor = {}
+
+    def get_buffer(self, m_average_score, net_param):
+        self.step = 0
+        self.buffer.clear()
+        self.average_score = m_average_score
+        while self.buffer.buffer_count < self.buffer.buffer_size:
+            while self._idle_actors:
+                actors = self._idle_actors.popleft()
+                future = actors.collect_data.remote(net_param)
+                self._future_to_actor[future] = actors
+
+            ready_idx, _ = ray.wait(list(self._future_to_actor.keys()))
+
+            for future in ready_idx:
+                self._idle_actors.append(self._future_to_actor[future])
+                self._future_to_actor.pop(future)
+                value = ray.get(future)
+                self.average_score = self.average_score * 0.99 + value[1] * 0.01
+                self.buffer.buffer = self.buffer.buffer + value[0]
+                self.buffer.buffer_count += len(value[0])
+                print(self.buffer.buffer_count)
+                self.step += 1
+
+        for future in self._future_to_actor.keys():
+            self._idle_actors.append(self._future_to_actor[future])
+            #ray.kill(future)
+            #ray.kill(self._future_to_actor[future])
+        self._future_to_actor = {}
+        buffer_length = len(self.buffer.buffer)
+        print("buffer size is:", buffer_length)
+
+        return np.array(self.buffer.buffer,dtype=self.buffer.data_type), self.step, self.average_score, buffer_length
 
 
 class Plot_result():
@@ -73,30 +149,3 @@ class Plot_result():
                 env=self.env,
                 update='append',
             )
-
-if __name__ == "__main__":
-    cuda = torch.cuda.is_available()
-    device = torch.device('cuda' if cuda else 'cpu')
-    basic_config = {
-        "ACTION_SIZE": (3,),
-        "ACTOR_LR": 0.0001,
-        "AC_STYLE": False,
-        "BATCH_SIZE": 128,
-        "CRITIC_LR": 0.0001,
-        "DEVICE": device,
-        "EPSILON": 0.2,
-        "ENV_RENDER": True,
-        "GAMMA": 0.9,
-        "GAME": "CartPole-v0",
-        "INPUT_SIZE": 4,
-        "INIT_WEIGHT": False,
-        "LR_RATE": 1e-3,
-        "MIN_BATCH_SIZE": 64,
-        "MAX_TRAIN_STEP": 100000,
-        "PPO_EP": 10,
-        "STATE_SIZE": (4, 96, 96),
-        "UPDATE_STEP": 15
-    }
-    test = Plot_result('test', 'test_x')
-    y = [1, 2, 4 ,6 ,67,34,87,123,77,5,8,4,2,76]
-    test.draw_lines(y, 'test_y', 'green')

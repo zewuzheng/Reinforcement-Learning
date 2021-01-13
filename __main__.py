@@ -47,7 +47,7 @@ basic_config = {
     "DEVICE": device,
     "EPSILON": args.clip,
     "ENV_RENDER": args.render,
-    'ENV_PALL': 8,
+    'ENV_PALL': 7,
     "GAMMA": args.gamma,
     "GAME": "CarRacing-v0",
     "GAME_SEED": args.seed,

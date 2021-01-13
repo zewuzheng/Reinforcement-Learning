@@ -18,11 +18,14 @@ class PPO_net(nn.Module):
         else:
             self.policy_mix = PPO_mix(basic_config)
 
+    def get_weight(self):
+        return {k: v.cpu() for k, v in self.state_dict().items()}
+
     def load_model(self, path=None):
         if path is not None:
             self.load_state_dict(torch.load(path))
         else:
-            self.load_state_dict(torch.load(self.store_path, map_location=torch.device('cpu')))
+            self.load_state_dict(torch.load(self.store_path))
 
     def save_model(self):
         torch.save(self.state_dict(), self.store_path)
