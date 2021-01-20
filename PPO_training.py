@@ -14,7 +14,7 @@ class PPO_train():
         self.device = basic_config["DEVICE"]
         self.gamma = basic_config["GAMMA"]
         self.env_pall = basic_config['ENV_PALL']
-        self.ppo_net = PPO_net(basic_config).to(self.device)
+        self.ppo_net = PPO_net(basic_config).double().to(self.device)
         if basic_config["LOAD_MODEL"]:
             self.ppo_net.load_model()
         self.replay_buffer = Replay_buffer(basic_config)
@@ -28,19 +28,19 @@ class PPO_train():
 
     def update(self, buffer_length):
         ## buffer_size * shape
-        s = torch.tensor(self.replay_buffer.buffer['s'], dtype=torch.float).to(
+        s = torch.tensor(self.replay_buffer.buffer['s'], dtype=torch.double).to(
             self.device)  ## torch.double equals to torch.tensor.to(float64)
-        a = torch.tensor(self.replay_buffer.buffer['a'], dtype=torch.float).to(self.device)
-        r = torch.tensor(self.replay_buffer.buffer['r'], dtype=torch.float).to(self.device).view(-1, 1)
-        s_pi = torch.tensor(self.replay_buffer.buffer['s_pi'], dtype=torch.float).to(self.device)
-        old_logp = torch.tensor(self.replay_buffer.buffer['old_logp'], dtype=torch.float).to(self.device).view(-1, 1)
-        mask = torch.tensor(self.replay_buffer.buffer['mask'], dtype=torch.float).to(self.device).view(-1, 1)
+        a = torch.tensor(self.replay_buffer.buffer['a'], dtype=torch.double).to(self.device)
+        r = torch.tensor(self.replay_buffer.buffer['r'], dtype=torch.double).to(self.device).view(-1, 1)
+        s_pi = torch.tensor(self.replay_buffer.buffer['s_pi'], dtype=torch.double).to(self.device)
+        old_logp = torch.tensor(self.replay_buffer.buffer['old_logp'], dtype=torch.double).to(self.device).view(-1, 1)
+        mask = torch.tensor(self.replay_buffer.buffer['mask'], dtype=torch.double).to(self.device).view(-1, 1)
         ## mask final state
         mask[-1] = 0
         pre_return = 0
         pre_advantage = 0
-        returns = torch.zeros_like(r, dtype=torch.float).to(self.device)
-        advantages = torch.zeros_like(r, dtype=torch.float).to(self.device)
+        returns = torch.zeros_like(r, dtype=torch.double).to(self.device)
+        advantages = torch.zeros_like(r, dtype=torch.double).to(self.device)
 
         with torch.no_grad():
             current_value = self.ppo_net.get_value(s)
@@ -73,7 +73,7 @@ class PPO_train():
                                                     s2_loss))  ## why get mean in the end, because the comparation is related to each state action pair
 
                 if self.bc["VAL_NORM"]:
-                    value_loss = torch.mean((self.ppo_net.get_value(s[ind]) - current_q[ind]).pow(2)) / returns[
+                    value_loss = torch.mean((self.ppo_net.get_value(s[ind]) - returns[ind]).pow(2)) / returns[
                         ind].std()  # returns[ind]
                 else:
                     #value_loss = torch.mean((self.ppo_net.get_value(s[ind]) - current_q[ind]).pow(2))  # returns[ind])
@@ -93,13 +93,14 @@ class PPO_train():
         para_collector = [Para_process.remote(self.bc) for _ in range(self.env_pall)]
         buffer_collector = Data_collecter(para_collector, self.bc)
         while step <= self.bc["MAX_TRAIN_STEP"]:
+            print(f"the {step} step start!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.replay_buffer.buffer, step_int, m_average_score, buffer_length = buffer_collector.get_buffer(m_average_score, self.ppo_net.get_weight())
             self.update(buffer_length)
             self.replay_buffer.clear()
             step += step_int
 
             self.plot_result(step, m_average_score)
-            self.plot_loss(step, self.total_loss)
+           # self.plot_loss(step, self.total_loss)
             #### learning rate adjusting ~~~~~~~~~~~~~~
             for p in self.optimizer.param_groups:
                 if m_average_score < 250 and lr_index == 0:
@@ -109,18 +110,21 @@ class PPO_train():
                     p['lr'] = 0.0005
                     lr_index = 2
                 elif 600 <= m_average_score < 700 and lr_index == 2:
-                    p['lr'] = 0.0002
+                    p['lr'] = 0.0003
                     lr_index = 3
                 elif 700 <= m_average_score < 780 and lr_index == 3:
-                    p['lr'] = 0.00008
+                    p['lr'] = 0.0001
                     lr_index = 4
-                elif m_average_score >= 780 and lr_index == 4:
+                elif 870 > m_average_score >= 780 and lr_index == 4:
                     p['lr'] = 0.00003
+                    lr_index = 5
+                elif m_average_score >= 870 and lr_index == 5:
+                    p['lr'] = 0.000002
                 else:
                     pass
                 print("current learning rate is, ", p['lr'])
 
             self.ppo_net.save_model()
-            if m_average_score > 900:
+            if m_average_score > 905:
                 print("Our agent is performing over threshold, ending training")
                 break

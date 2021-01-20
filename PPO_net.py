@@ -9,9 +9,9 @@ from torch.distributions import Beta
 class PPO_net(nn.Module):
     def __init__(self, basic_config):
         super(PPO_net, self).__init__()
+        self.bc = basic_config
         self.ac_style = basic_config['AC_STYLE']
         self.device = basic_config["DEVICE"]
-        self.store_path = basic_config["STORE"]
         if self.ac_style:
             self.policy_mix = PPO_actor(basic_config)
             self.value = PPO_critic(basic_config)
@@ -25,17 +25,17 @@ class PPO_net(nn.Module):
         if path is not None:
             self.load_state_dict(torch.load(path))
         else:
-            self.load_state_dict(torch.load(self.store_path))
+            self.load_state_dict(torch.load(f"models/ppo_ga_{self.bc['GAMMA']}_lam_{self.bc['LAMBDA']}_weight_{self.bc['INIT_WEIGHT']}_ac_{self.bc['AC_STYLE']}.pt"))
 
     def save_model(self):
-        torch.save(self.state_dict(), self.store_path)
+        torch.save(self.state_dict(), f"models/ppo_ga_{self.bc['GAMMA']}_lam_{self.bc['LAMBDA']}_weight_{self.bc['INIT_WEIGHT']}_ac_{self.bc['AC_STYLE']}.pt")
 
     @torch.no_grad()
     def get_action(self, state):
         if state.ndim == 4:
-            state1 = torch.from_numpy(state).float().to(self.device)
+            state1 = torch.from_numpy(state).double().to(self.device)
         else:
-            state1 = torch.from_numpy(state).float().to(self.device).unsqueeze(0)
+            state1 = torch.from_numpy(state).double().to(self.device).unsqueeze(0)
 
         (alpha, beta), _ = self.policy_mix.forward(state1)
         # print("alpha: ", alpha, "beta: ", beta)

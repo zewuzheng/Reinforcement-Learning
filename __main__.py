@@ -49,7 +49,7 @@ basic_config = {
     "DEVICE": device,
     "EPSILON": args.clip,
     "ENV_RENDER": args.render,
-    'ENV_PALL': 12,
+    'ENV_PALL': 22,
     "GAMMA": args.gamma,
     "GAME": "CarRacing-v0",
     "GAME_SEED": args.seed,
@@ -58,7 +58,7 @@ basic_config = {
     "LR_RATE": 1e-3,
     "LOAD_MODEL": args.load,
     "LAMBDA": args.plambda,
-    "MAX_TRAIN_STEP": 100000,
+    "MAX_TRAIN_STEP": 1000000,
     "PPO_EP": 10,
     "STATE_SIZE":  (args.img_stack, 96, 96),
     "STORE": args.store,
@@ -68,7 +68,7 @@ basic_config = {
 if use_cuda:
     torch.cuda.manual_seed(basic_config["GAME_SEED"])
 
-ray.init(num_cpus=13, num_gpus=1)
+ray.init(num_cpus=22, num_gpus=1)
 ppo_training = PPO_train(basic_config)
 ppo_training.train()
 
